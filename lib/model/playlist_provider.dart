@@ -38,7 +38,7 @@ class PlaylistProvider extends ChangeNotifier {
       _recentSongs.add(song);
 
       // نحتفظ بآخر 10 أغاني فقط
-      if (_recentSongs.length > 10) {
+      if (_recentSongs.length > 30) {
         _recentSongs.removeAt(0);
       }
 
