@@ -1,32 +1,22 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:music_app/model/songs.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:provider/provider.dart';
+import 'package:on_audio_query/on_audio_query.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class PlaylistProvider extends ChangeNotifier {
-  final List<Song> _playlist = [
-    Song(
-        songname: "HABIBY",
-        artistname: "Mohamed Maher",
-        albumimagepath: "assets/image/singer.jpg",
-        audiopath: "assets/songs/ahmed1.mp3"),
-    Song(
-        songname: "Tamaly Maak",
-        artistname: "Mohamed Ramadan",
-        albumimagepath: "assets/image/songphoto2.png",
-        audiopath: "assets/songs/ahmed2.mp3"),
-    Song(
-        songname: "Alby",
-        artistname: "sherein",
-        albumimagepath: "assets/image/songphoto3.jpg",
-        audiopath: "assets/songs/ahmed3.mp3")
-  ];
+  List<SongModel> _playlist = [];
+  List<SongModel> _recentSongs =
+      []; // قائمة للأغاني اللي تم الاستماع إليها مؤخراً
 
   int? _currentindex = 0;
 
   // Audio player
+  final OnAudioQuery _audioQuery = OnAudioQuery();
+
   final _audioPlayer = AudioPlayer();
   bool _isRepeating = false;
   bool _isShuffling = false;
@@ -38,22 +28,102 @@ class PlaylistProvider extends ChangeNotifier {
   // Constructor
   PlaylistProvider() {
     listenToDuration();
+    _requestPermissionAndLoadSongs();
+    _loadRecentSongsFromSharedPrefs(); // تحميل recentSongs عند التهيئة
   }
 
   bool _isplaying = false;
+  void _addRecentSong(SongModel song) async {
+    if (!_recentSongs.contains(song)) {
+      _recentSongs.add(song);
+
+      // نحتفظ بآخر 10 أغاني فقط
+      if (_recentSongs.length > 10) {
+        _recentSongs.removeAt(0);
+      }
+
+      // تحويل قائمة الأغاني إلى قائمة JSON لتخزينها في SharedPreferences
+      List<String> recentSongsData = _recentSongs.map((song) {
+        return jsonEncode({
+          'id': song.id,
+          'title': song.title,
+          'artist': song.artist,
+          'uri': song.uri,
+        });
+      }).toList();
+
+      // حفظ القائمة في SharedPreferences
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('recentSongs', recentSongsData);
+    }
+
+    notifyListeners();
+  }
+
+  List<SongModel> get recentSongs => _recentSongs;
+  Future<void> _loadRecentSongsFromSharedPrefs() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<String> recentSongsData = prefs.getStringList('recentSongs') ?? [];
+
+    // تحويل البيانات المحفوظة إلى كائنات SongModel
+    _recentSongs = recentSongsData.map((songJson) {
+      Map<String, dynamic> songMap = jsonDecode(songJson);
+
+      // بناء SongModel من البيانات المخزنة
+      return SongModel({
+        '_id': songMap['id'],
+        'title': songMap['title'],
+        'artist': songMap['artist'],
+        '_uri': songMap['uri'],
+      });
+    }).toList();
+
+    notifyListeners(); // تحديث واجهة المستخدم
+  }
+
+  Future<void> _requestPermissionAndLoadSongs() async {
+    if (await Permission.storage.request().isGranted) {
+      _loadSongs();
+    } else {
+      // Handle the case when permission is denied
+    }
+  }
+
+  Future<void> _loadSongs() async {
+    _playlist = await _audioQuery.querySongs();
+    notifyListeners();
+  }
 
   // Play the song
   void play() async {
-    final String path = _playlist[_currentindex!].audiopath;
-    print("Playing file at path: $path");
+    if (_playlist.isNotEmpty && _currentindex != null) {
+      await _loadRecentSongsFromSharedPrefs();
 
-    try {
-      await _audioPlayer.setAsset(path);
-      await _audioPlayer.play();
-      _isplaying = true;
-      notifyListeners();
-    } catch (e) {
-      print("Error: $e");
+      final SongModel currentSong =
+          _playlist[_currentindex!]; // احصل على الأغنية الحالية
+      final String path = currentSong.uri ?? '';
+      try {
+        // قم بتهيئة الصوت قبل التحديث
+        await _audioPlayer.setUrl(path);
+
+        // استمع إلى حالة المشغل وتحديث واجهة المستخدم بناءً على حالة التشغيل الفعلية
+        _audioPlayer.playerStateStream.listen((playerState) {
+          if (playerState.playing) {
+            _isplaying = true;
+          } else {
+            _isplaying = false;
+          }
+          notifyListeners();
+        });
+
+        // بعد تهيئة الصوت، ابدأ التشغيل
+        await _audioPlayer.play();
+
+        // إضافة الأغنية إلى قائمة الأغاني الحديثة
+        _addRecentSong(currentSong);
+      } catch (e) {
+        print("Error: $e");
+      }
     }
   }
 
@@ -166,6 +236,16 @@ class PlaylistProvider extends ChangeNotifier {
       notifyListeners(); // Update the total song duration
     });
 
+    _audioPlayer.playerStateStream.listen(
+      (playerState) {
+        if (playerState.playing) {
+          _isplaying = true;
+        } else {
+          _isplaying = false;
+        }
+        notifyListeners();
+      },
+    );
     _audioPlayer.playerStateStream.listen((playerState) {
       if (playerState.processingState == ProcessingState.completed) {
         playNext(); // Move to the next song when the current one is completed
@@ -180,11 +260,18 @@ class PlaylistProvider extends ChangeNotifier {
     super.dispose();
   }
 
+  void setPlaylist(List<SongModel> playlist, int index) {
+    _playlist = playlist;
+    currentindex = index; // سيتم استدعاء play هنا
+    notifyListeners();
+  }
+
   // Getters
+
   bool get isplaying => _isplaying;
   Duration get currentDuration => _currentduration;
   Duration get totalDuration => _totalduration;
-  List<Song> get playlist => _playlist;
+  List<SongModel> get playlist => _playlist;
   int? get currentindex => _currentindex;
   bool get isRepeating => _isRepeating;
   bool get isShuffling => _isShuffling;
