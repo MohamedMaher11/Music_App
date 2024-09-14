@@ -6,6 +6,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:async'; // لإدارة العمليات المتزامنة
 
 class PlaylistProvider extends ChangeNotifier {
   List<SongModel> _playlist = [];
@@ -20,6 +21,7 @@ class PlaylistProvider extends ChangeNotifier {
   final _audioPlayer = AudioPlayer();
   bool _isRepeating = false;
   bool _isShuffling = false;
+  final _lock = Completer(); // لوك عشان التحكم في العمليات المتزامنة
 
   // Durations
   Duration _currentduration = Duration.zero;
@@ -34,30 +36,32 @@ class PlaylistProvider extends ChangeNotifier {
 
   bool _isplaying = false;
   void _addRecentSong(SongModel song) async {
-    if (!_recentSongs.contains(song)) {
-      _recentSongs.add(song);
+    // لو الأغنية موجودة في اللستة بنشيلها
+    _recentSongs.removeWhere((existingSong) => existingSong.id == song.id);
 
-      // نحتفظ بآخر 10 أغاني فقط
-      if (_recentSongs.length > 30) {
-        _recentSongs.removeAt(0);
-      }
+    // بعد كده بنضيف الأغنية الجديدة في أول القائمة
+    _recentSongs.insert(0, song);
 
-      // تحويل قائمة الأغاني إلى قائمة JSON لتخزينها في SharedPreferences
-      List<String> recentSongsData = _recentSongs.map((song) {
-        return jsonEncode({
-          'id': song.id,
-          'title': song.title,
-          'artist': song.artist,
-          'uri': song.uri,
-        });
-      }).toList();
-
-      // حفظ القائمة في SharedPreferences
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('recentSongs', recentSongsData);
+    // نحتفظ بآخر 10 أو 30 أغنية فقط حسب رغبتك
+    if (_recentSongs.length > 30) {
+      _recentSongs = _recentSongs.sublist(0, 30);
     }
 
-    notifyListeners();
+    // تحويل قائمة الأغاني إلى قائمة JSON لتخزينها في SharedPreferences
+    List<String> recentSongsData = _recentSongs.map((song) {
+      return jsonEncode({
+        'id': song.id,
+        'title': song.title,
+        'artist': song.artist,
+        'uri': song.uri,
+      });
+    }).toList();
+
+    // حفظ القائمة في SharedPreferences
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('recentSongs', recentSongsData);
+
+    notifyListeners(); // تحديث واجهة المستخدم
   }
 
   List<SongModel> get recentSongs => _recentSongs;
@@ -215,12 +219,28 @@ class PlaylistProvider extends ChangeNotifier {
   }
 
   void toggleRepeat() {
-    _isRepeating = !_isRepeating;
+    _lock.isCompleted; // بستخدم اللوك هنا عشان اتأكد أن مفيش حالة تانية شغالة
+
+    // نلغي الشفل لما نفعل الريبيت
+    if (!_isRepeating) {
+      _isRepeating = true;
+      _isShuffling = false;
+    } else {
+      _isRepeating = false;
+    }
     notifyListeners();
   }
 
   void toggleShuffle() {
-    _isShuffling = !_isShuffling;
+    _lock.isCompleted;
+
+    // نلغي الريبيت لما نفعل الشفل
+    if (!_isShuffling) {
+      _isShuffling = true;
+      _isRepeating = false;
+    } else {
+      _isShuffling = false;
+    }
     notifyListeners();
   }
 

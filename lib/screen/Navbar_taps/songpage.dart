@@ -143,13 +143,17 @@ class _SongPageState extends State<SongPage>
                   RotationTransition(
                     turns: _rotationController,
                     child: Container(
-                      padding: EdgeInsets.all(4.0), // حجم الإطار
+                      padding: EdgeInsets.all(6.0), // حجم الإطار البرتقالي
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.black, // اللون البرتقالي للإطار
+                        border: Border.all(
+                          color: Color(0xFFFF5722), // اللون البرتقالي للإطار
+                          width: 4.0, // سمك الإطار
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.3), // ظل خفيف
+                            color:
+                                Colors.black.withOpacity(0.3), // ظل خفيف للصورة
                             spreadRadius: 2,
                             blurRadius: 5,
                             offset: Offset(0, 3), // موقع الظل
@@ -166,8 +170,8 @@ class _SongPageState extends State<SongPage>
                           nullArtworkWidget: Icon(
                             Icons.music_note,
                             size: 250,
-                            color: Colors
-                                .white, // اللون الذي سيظهر إذا كانت الصورة غير موجودة
+                            color:
+                                Colors.white, // اللون اللي هيظهر لو مفيش صورة
                           ),
                         ),
                       ),
@@ -254,7 +258,7 @@ class _SongPageState extends State<SongPage>
                         iconSize: 30,
                         onPressed: () {
                           value.toggleShuffle();
-                          setState(() {});
+                          setState(() {}); // تحديث الواجهة
                         },
                       ),
                       IconButton(
@@ -309,7 +313,7 @@ class _SongPageState extends State<SongPage>
                         iconSize: 30,
                         onPressed: () {
                           value.toggleRepeat();
-                          setState(() {}); // لتحديث حالة الزر
+                          setState(() {}); // تحديث الواجهة
                         },
                       ),
                     ],
