@@ -313,7 +313,7 @@ class _SongPageState extends State<SongPage>
                         iconSize: 30,
                         onPressed: () {
                           value.toggleRepeat();
-                          setState(() {}); // تحديث الواجهة
+                          setState(() {}); // لتحديث حالة الزر
                         },
                       ),
                     ],
